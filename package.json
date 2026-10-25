@@ -1,0 +1,130 @@
+{
+	"name": "@andrewrip/matka",
+	"version": "0.1.0",
+	"description": "Roll a six, your order's free: a server-decided dice roll after Stripe Checkout, for SvelteKit.",
+	"license": "MIT",
+	"author": "Andrew Robinson",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/a-rbsn/matka.git"
+	},
+	"homepage": "https://github.com/a-rbsn/matka#readme",
+	"bugs": {
+		"url": "https://github.com/a-rbsn/matka/issues"
+	},
+	"type": "module",
+	"svelte": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"svelte": "./dist/index.js",
+			"default": "./dist/index.js"
+		},
+		"./server": {
+			"types": "./dist/server/index.d.ts",
+			"browser": "./dist/server/browser.js",
+			"default": "./dist/server/index.js"
+		},
+		"./server/memory": {
+			"types": "./dist/server/memory.d.ts",
+			"default": "./dist/server/memory.js"
+		},
+		"./server/blobs": {
+			"types": "./dist/server/blobs.d.ts",
+			"default": "./dist/server/blobs.js"
+		},
+		"./server/supabase": {
+			"types": "./dist/server/supabase.d.ts",
+			"default": "./dist/server/supabase.js"
+		},
+		"./themes/dice3d": {
+			"types": "./dist/themes/dice3d/index.d.ts",
+			"svelte": "./dist/themes/dice3d/index.js",
+			"default": "./dist/themes/dice3d/index.js"
+		},
+		"./sql/*": "./sql/*",
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build && node scripts/check-bundle.js && npm run package",
+		"package": "svelte-kit sync && svelte-package && publint",
+		"prepublishOnly": "npm run check && npm run test && npm run build && attw --pack . --profile esm-only --ignore-rules internal-resolution-error",
+		"prepare": "svelte-kit sync || echo ''",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"lint": "prettier --check .",
+		"format": "prettier --write .",
+		"test:unit": "vitest",
+		"test": "npm run test:unit -- --run",
+		"stripe:listen": "set -a && . ./.env && set +a && stripe listen --api-key \"$STRIPE_SECRET_KEY\" --forward-to localhost:5173/api/stripe-webhook --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed"
+	},
+	"files": [
+		"dist",
+		"sql",
+		"!dist/**/*.test.*",
+		"!dist/**/*.spec.*"
+	],
+	"sideEffects": [
+		"**/*.css"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"devDependencies": {
+		"@arethetypeswrong/cli": "^0.18.5",
+		"@netlify/blobs": "^11.1.6",
+		"@supabase/supabase-js": "^2.118.0",
+		"@sveltejs/kit": "^3.1.0",
+		"@sveltejs/package": "^3.0.1",
+		"@sveltejs/vite-plugin-svelte": "^7.3.1",
+		"@testing-library/svelte": "^5.4.2",
+		"@testing-library/user-event": "^14.6.8",
+		"@types/node": "^22.20.5",
+		"@types/three": "^0.186.0",
+		"cannon-es": "^0.20.0",
+		"jsdom": "^29.1.1",
+		"prettier": "^3.9.10",
+		"prettier-plugin-svelte": "^4.1.1",
+		"publint": "^0.3.25",
+		"stripe": "^23.0.1",
+		"svelte": "^5.57.2",
+		"svelte-check": "^4.7.7",
+		"three": "^0.186.1",
+		"typescript": "^6.0.3",
+		"vite": "^8.3.5",
+		"vitest": "^4.1.11"
+	},
+	"keywords": [
+		"svelte",
+		"sveltekit",
+		"stripe",
+		"dice",
+		"refund",
+		"checkout"
+	],
+	"engines": {
+		"node": ">=20"
+	},
+	"peerDependencies": {
+		"svelte": "^5.7.0",
+		"@netlify/blobs": ">=8.1.0",
+		"@supabase/supabase-js": "^2.0.0",
+		"cannon-es": "^0.20.0",
+		"three": ">=0.160.0"
+	},
+	"peerDependenciesMeta": {
+		"@netlify/blobs": {
+			"optional": true
+		},
+		"@supabase/supabase-js": {
+			"optional": true
+		},
+		"cannon-es": {
+			"optional": true
+		},
+		"three": {
+			"optional": true
+		}
+	}
+}
