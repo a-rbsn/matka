@@ -13,7 +13,7 @@ cd matka
 npm install
 ```
 
-You need Node 20 or later. To try a real checkout you also need the
+You need Node 22.17 or later (SvelteKit 3 and the dev tools need it). To try a real checkout you also need the
 [Stripe CLI](https://docs.stripe.com/stripe-cli) and a Stripe account in test mode.
 
 ## Project layout
