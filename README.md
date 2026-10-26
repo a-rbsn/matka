@@ -5,6 +5,8 @@ die on your thanks page. On a six, the whole order is refunded, and the order st
 
 It's a web version of the Matka dice game at Dishoom, for Svelte and SvelteKit.
 
+![A die in two primary colours is thrown onto the page, tumbles and lands on a six. The page says the order is refunded, and the die hops about.](docs/primary-dice.gif)
+
 - **The server decides.** The roll is made with `crypto.randomInt` when Stripe says the order is
   paid, and kept against the Checkout session: one paid order, one roll. The browser only
   reveals it.
