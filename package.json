@@ -1,6 +1,6 @@
 {
 	"name": "@andrewrip/matka",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Roll a six, your order's free: a server-decided dice roll after Stripe Checkout, for SvelteKit.",
 	"license": "MIT",
 	"author": "Andrew Robinson",
