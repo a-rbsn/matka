@@ -384,6 +384,74 @@ describe('listUnrevealed', () => {
 	});
 });
 
+describe('sweep', () => {
+	const day = 24 * 60 * 60 * 1000;
+	const order = (id: string, pi: string) =>
+		paid(id, 'checkout.session.completed', { payment_intent: pi });
+
+	it('reveals rolls nobody revealed in time, refunding the sixes', async () => {
+		const { matka, refunds } = setup();
+		faces = [6, 2, 6];
+		await matka.handleEvent(order('cs_test_won', 'pi_won'));
+		await matka.handleEvent(order('cs_test_lost', 'pi_lost'));
+		clock += day;
+		await matka.handleEvent(order('cs_test_new', 'pi_new'));
+		clock += 1000;
+		const swept = await matka.sweep({ before: new Date(clock - day) });
+		expect(swept).toEqual({ revealed: 2, refunded: 1, pending: [] });
+		expect(refunds.map((r) => r.payment_intent)).toEqual(['pi_won']);
+		// The new one's still the customer's to roll.
+		expect(await matka.status('cs_test_new')).toMatchObject({ status: 'ready' });
+		expect(await matka.reveal('cs_test_won')).toMatchObject({
+			firstReveal: false,
+			refund: 'issued'
+		});
+	});
+
+	it('tries failed refunds again, and says which still fail', async () => {
+		const { matka, refunds, fail, create } = setup();
+		faces = [6, 6];
+		await matka.handleEvent(order('cs_test_a', 'pi_a'));
+		await matka.handleEvent(order('cs_test_b', 'pi_b'));
+		fail.next = { message: 'Stripe is down' };
+		await matka.reveal('cs_test_a');
+		create.mockRejectedValueOnce(new Error('Stripe is down'));
+		await matka.reveal('cs_test_b');
+		expect(refunds).toHaveLength(0);
+		expect((await matka.listUnrefunded()).map((r) => r.sessionId)).toEqual([
+			'cs_test_a',
+			'cs_test_b'
+		]);
+
+		// Within a try's lease, nothing's tried: both still pending.
+		expect(await matka.sweep({ before: new Date(clock) })).toEqual({
+			revealed: 0,
+			refunded: 0,
+			pending: ['cs_test_a', 'cs_test_b']
+		});
+		clock += 60_000;
+		create.mockRejectedValueOnce(new Error('still down'));
+		expect(await matka.sweep({ before: new Date(clock) })).toEqual({
+			revealed: 0,
+			refunded: 1,
+			pending: ['cs_test_a']
+		});
+		expect(refunds.map((r) => r.payment_intent)).toEqual(['pi_b']);
+		clock += 60_000;
+		expect(await matka.sweep({ before: new Date(clock) })).toEqual({
+			revealed: 0,
+			refunded: 1,
+			pending: []
+		});
+		expect(await matka.listUnrefunded()).toEqual([]);
+		expect(await matka.sweep({ before: new Date(clock) })).toEqual({
+			revealed: 0,
+			refunded: 0,
+			pending: []
+		});
+	});
+});
+
 describe('handler', () => {
 	const url = `https://shop.test/api/matka?session_id=${SESSION}`;
 

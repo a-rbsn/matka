@@ -26,6 +26,10 @@ export const refundIsStale = (roll: Roll, staleBefore: string) =>
 	!roll.refundId &&
 	Date.parse(roll.refundTriedAt ?? roll.revealedAt) < Date.parse(staleBefore);
 
+/** A revealed win with no refund recorded: its refund failed (or is being made right now). */
+export const isUnrefunded = (roll: Roll) =>
+	roll.face === roll.winningFace && !!roll.revealedAt && !roll.refundId;
+
 /** A win whose charge was already fully refunded (by hand, say) when it was revealed. */
 export const ALREADY_REFUNDED = 'already_refunded';
 
@@ -51,6 +55,8 @@ export interface MatkaStore {
 	recordRefund(sessionId: string, refundId: string): Promise<Roll>;
 	/** Rolls nobody has revealed, oldest first; `before` (ISO 8601) leaves out newer ones. */
 	listUnrevealed(options?: { before?: string }): Promise<Roll[]>;
+	/** Rolls that are isUnrefunded, oldest first. */
+	listUnrefunded(): Promise<Roll[]>;
 	/**
 	 * Records that a session will never have a roll (£0, no payment, a bank payment that failed),
 	 * so the endpoint can answer "none" without asking Stripe.

@@ -185,6 +185,34 @@ export const config = { path: '/api/matka' };
 Without `theme`, you get a flat SVG die with no extra dependencies. The component only fetches
 in the browser, so it works on a prerendered or static (adapter-static) thanks page.
 
+### 6. Sweep up once a day
+
+A six is refunded when it's revealed. A customer who closes the tab before the thanks page loads
+would never reveal theirs, and a refund that fails (Stripe is down, say) is only tried again on
+the next reveal. So once a day, call `sweep()`: it reveals the rolls nobody has revealed for a
+day, refunding the sixes, and tries again any refund that failed. Stripe emails the customer
+about the refund, if refund emails are on in your Stripe settings.
+
+On Netlify, as a scheduled function:
+
+```ts
+// netlify/functions/matka-sweep.ts
+import { matka } from './_matka';
+
+export default async () => {
+	const { revealed, refunded, pending } = await matka.sweep({
+		before: new Date(Date.now() - 24 * 60 * 60 * 1000)
+	});
+	console.log(`[matka] revealed ${revealed}, refunded ${refunded}`);
+	if (pending.length) console.error('[matka] refunds still failing:', pending);
+};
+
+export const config = { schedule: '@daily' };
+```
+
+Anywhere else, run the same from a cron job. `pending` lists the wins whose refund still
+failed: worth an alert, and a look in Stripe.
+
 ## Try it in test mode
 
 1. Use your Stripe test keys, and forward webhooks to your dev server:
@@ -207,6 +235,7 @@ in the browser, so it works on a prerendered or static (adapter-static) thanks p
 - [ ] Subscribe your live webhook to the three events above.
 - [ ] If you use a restricted API key, give it **Refunds: Write**. Matka only creates and lists
       refunds.
+- [ ] Run `sweep()` once a day ([step 6](#6-sweep-up-once-a-day)).
 - [ ] Use a store that's shared between server instances: not `memoryStore`. With Netlify Blobs,
       use `consistency: 'strong'`.
 - [ ] Budget for it. On average one order in six is refunded in full, shipping included, and
@@ -229,8 +258,9 @@ const store = blobsStore(getStore({ name: 'matka', consistency: 'strong' }));
 
 ### Supabase
 
-Run [`sql/001_matka_rolls.sql`](sql/001_matka_rolls.sql) in your database (it's also in the
-package, at `node_modules/@andrewrip/matka/sql/001_matka_rolls.sql`). Then:
+Run [`sql/001_matka_rolls.sql`](sql/001_matka_rolls.sql), then
+[`sql/002_matka_won.sql`](sql/002_matka_won.sql), in your database (they're also in the package,
+in `node_modules/@andrewrip/matka/sql/`). Coming from 0.1.0, run just the second. Then:
 
 ```ts
 import { createClient } from '@supabase/supabase-js';
@@ -257,6 +287,7 @@ interface MatkaStore {
 	claimRefund(sessionId: string, at: string, staleBefore: string): Promise<boolean>;
 	recordRefund(sessionId: string, refundId: string): Promise<Roll>; // only if unset
 	listUnrevealed(options?: { before?: string }): Promise<Roll[]>; // oldest first
+	listUnrefunded(): Promise<Roll[]>; // revealed wins with no refundId, oldest first
 	markNone(sessionId: string, at: string): Promise<void>; // this session will never have a roll
 	isNone(sessionId: string): Promise<boolean>;
 }
@@ -313,7 +344,16 @@ Every call returns the same face, and only one refund is ever made. It returns o
 or `rolled`.
 
 **`listUnrevealed({ before?: Date })`** → `Promise<Roll[]>`. Rolls nobody has revealed, oldest
-first: for a reminder email, say. A customer who never opens the thanks page never rolls.
+first: for a reminder email, say.
+
+**`listUnrefunded()`** → `Promise<Roll[]>`. Revealed wins whose refund hasn't gone through, oldest
+first. `reveal()` tries each one again.
+
+**`sweep({ before: Date })`** → `Promise<{ revealed, refunded, pending }>`. For a daily job
+([step 6](#6-sweep-up-once-a-day)). It reveals the rolls nobody revealed before `before`
+(refunding the sixes), then tries again the refunds that failed. `revealed` and `refunded` are
+counts. `pending` lists the session IDs of wins whose refund still failed. A refund tried in the
+last 30 seconds isn't tried again yet, so it's listed as pending too.
 
 A `Roll` is:
 
@@ -500,7 +540,7 @@ Pairs under 3:1 are skipped, and if none reach it, the pair with the most contra
    order already refunded by hand counts as refunded.
 4. **Failed refunds are tried again.** If a refund fails (Stripe is down, the process crashes,
    the charge is disputed), the result still comes back with `refund: 'pending'`, and a later
-   reveal tries again. Each try holds a 30-second lease, so tries can't overlap, and a refund
+   reveal, or the daily `sweep()`, tries again. Each try holds a 30-second lease, so tries can't overlap, and a refund
    that keeps failing is tried at most twice a minute, however often it's revealed.
 5. **Rolls can't be edited.** In Postgres, a trigger refuses any change to a roll except setting
    `revealed_at` and `refund_id` once each, and the retry lease.

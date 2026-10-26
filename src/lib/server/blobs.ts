@@ -1,9 +1,10 @@
 import type { Store } from '@netlify/blobs';
-import { refundIsStale, type MatkaStore, type Roll } from './store.js';
+import { isUnrefunded, refundIsStale, type MatkaStore, type Roll } from './store.js';
 
 const ROLL = 'rolls/';
 const UNREVEALED = 'unrevealed/';
 const NONE = 'none/';
+const WON = 'won/';
 /** Tries at a compare-and-swap before giving up (each lost race means another write won). */
 const TRIES = 8;
 
@@ -13,8 +14,8 @@ const TRIES = 8;
  *
  * `rolls/<session>` holds each roll, created with onlyIfNew and changed with onlyIfMatch, so two
  * writers can't both win. `unrevealed/<session>` is an empty entry per roll not yet revealed, so
- * listUnrevealed needn't read every roll ever made. `none/<session>` marks a session that will
- * never have a roll.
+ * listUnrevealed needn't read every roll ever made; `won/<session>` likewise per win not yet
+ * refunded, for listUnrefunded. `none/<session>` marks a session that will never have a roll.
  */
 export function blobsStore(store: Store): MatkaStore {
 	const read = async (sessionId: string) => {
@@ -40,6 +41,7 @@ export function blobsStore(store: Store): MatkaStore {
 			// The index first: an entry with no roll is skipped (and tidied) by listUnrevealed, but a
 			// roll with no entry would never be listed.
 			await store.set(UNREVEALED + roll.sessionId, '');
+			if (roll.face === roll.winningFace) await store.set(WON + roll.sessionId, '');
 			const { modified } = await store.setJSON(ROLL + roll.sessionId, roll, { onlyIfNew: true });
 			if (modified) return roll;
 			const existing = await read(roll.sessionId);
@@ -64,6 +66,7 @@ export function blobsStore(store: Store): MatkaStore {
 		async recordRefund(sessionId, refundId) {
 			const done = await swap(sessionId, (r) => (r.refundId ? null : { ...r, refundId }));
 			if (!done) throw new Error(`no roll for ${sessionId}`);
+			await store.delete(WON + sessionId);
 			return done.roll;
 		},
 		async listUnrevealed({ before } = {}) {
@@ -76,6 +79,18 @@ export function blobsStore(store: Store): MatkaStore {
 				// Revealed, but the entry outlived it (a crash between the two writes): tidied now.
 				if (roll.revealedAt) await store.delete(key);
 				else if (!before || roll.createdAt < before) rolls.push(roll);
+			}
+			return rolls.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+		},
+		async listUnrefunded() {
+			const { blobs } = await store.list({ prefix: WON });
+			const rolls: Roll[] = [];
+			for (const { key } of blobs) {
+				const roll = (await read(key.slice(WON.length)))?.roll;
+				if (!roll) continue;
+				if (isUnrefunded(roll)) rolls.push(roll);
+				// Refunded, or not a win after all (a duplicate webhook's roll, never stored): tidied.
+				else if (roll.refundId || roll.face !== roll.winningFace) await store.delete(key);
 			}
 			return rolls.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 		},

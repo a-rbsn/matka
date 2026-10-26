@@ -13,7 +13,7 @@ import { supabaseStore } from './supabase.js';
 /**
  * The same tests for every store. Supabase's run when MATKA_TEST_SUPABASE_URL and
  * MATKA_TEST_SUPABASE_KEY (a service role key) are set: a local `supabase start` with
- * sql/001_matka_rolls.sql applied. Each run uses its own session ids, so old rows don't matter.
+ * sql/ applied (`supabase db reset`). Each run uses its own session ids, so old rows don't matter.
  */
 
 const run = Date.now().toString(36);
@@ -130,6 +130,36 @@ function contract(
 				rolls.map((r) => r.sessionId).filter((s) => [a, b, c].includes(s));
 			expect(ours(await store.listUnrevealed())).toEqual([a, b]);
 			expect(ours(await store.listUnrevealed({ before: '2020-01-01T00:00:01.500Z' }))).toEqual([a]);
+		});
+
+		it('lists revealed wins with no refund recorded, oldest first', async () => {
+			const [won, wonFirst, refunded, lost, unrevealed, notAWin] = [
+				id(),
+				id(),
+				id(),
+				id(),
+				id(),
+				id()
+			];
+			await store.create(roll(won, '2020-01-01T00:00:02.000Z', 6));
+			await store.create(roll(wonFirst, '2020-01-01T00:00:01.000Z', 6));
+			await store.create(roll(refunded, '2020-01-01T00:00:03.000Z', 6));
+			await store.create(roll(lost, '2020-01-01T00:00:04.000Z', 2));
+			await store.create(roll(unrevealed, '2020-01-01T00:00:05.000Z', 6));
+			// A duplicate webhook rolls again (a six), but the first roll (a four) is the one kept.
+			await store.create(roll(notAWin, '2020-01-01T00:00:06.000Z', 4));
+			await store.create(roll(notAWin, '2020-01-01T00:00:07.000Z', 6));
+			for (const s of [won, wonFirst, refunded, lost, notAWin]) {
+				await store.markRevealed(s, '2026-10-25T12:00:00.000Z');
+			}
+			await store.recordRefund(refunded, 're_1');
+			const ours = (rolls: Roll[]) =>
+				rolls
+					.map((r) => r.sessionId)
+					.filter((s) => [won, wonFirst, refunded, lost, unrevealed, notAWin].includes(s));
+			expect(ours(await store.listUnrefunded())).toEqual([wonFirst, won]);
+			await store.recordRefund(won, 're_2');
+			expect(ours(await store.listUnrefunded())).toEqual([wonFirst]);
 		});
 
 		it.skipIf(!concurrent)('lets one of many concurrent reveals be first', async () => {

@@ -1,4 +1,4 @@
-import { refundIsStale, type MatkaStore, type Roll } from './store.js';
+import { isUnrefunded, refundIsStale, type MatkaStore, type Roll } from './store.js';
 
 /**
  * Rolls kept in memory: for tests and local demos. Gone when the process ends, and not shared
@@ -40,6 +40,12 @@ export function memoryStore(): MatkaStore & { rolls: Map<string, Roll> } {
 		async listUnrevealed({ before } = {}) {
 			return [...rolls.values()]
 				.filter((r) => !r.revealedAt && (!before || r.createdAt < before))
+				.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+				.map(copy);
+		},
+		async listUnrefunded() {
+			return [...rolls.values()]
+				.filter(isUnrefunded)
 				.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
 				.map(copy);
 		},

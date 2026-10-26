@@ -37,6 +37,16 @@ export interface MatkaEvent {
 	data: { object: unknown };
 }
 
+/** What sweep() did. */
+export interface MatkaSweep {
+	/** Rolls it revealed (nobody had). */
+	revealed: number;
+	/** Wins it refunded. */
+	refunded: number;
+	/** Wins whose refund still failed (session ids): worth a look in Stripe. */
+	pending: string[];
+}
+
 export interface MatkaOptions {
 	stripe: MatkaStripe;
 	store: MatkaStore;
@@ -248,6 +258,32 @@ export function createMatka(options: MatkaOptions) {
 		/** Rolls nobody has revealed, oldest first (for a reminder email, say). */
 		listUnrevealed(options?: { before?: Date }): Promise<Roll[]> {
 			return store.listUnrevealed({ before: options?.before?.toISOString() });
+		},
+
+		/** Revealed wins whose refund hasn't gone through, oldest first. reveal() tries again. */
+		listUnrefunded(): Promise<Roll[]> {
+			return store.listUnrefunded();
+		},
+
+		/**
+		 * For a scheduled job (daily, say). Reveals the rolls nobody revealed before `before`, so a
+		 * six is refunded even if the customer never saw the thanks page, and tries again any refund
+		 * that failed. Returns how many it revealed and refunded, and the wins still unrefunded.
+		 */
+		async sweep({ before }: { before: Date }): Promise<MatkaSweep> {
+			const result: MatkaSweep = { revealed: 0, refunded: 0, pending: [] };
+			const rolls = [
+				...(await store.listUnrevealed({ before: before.toISOString() })),
+				...(await store.listUnrefunded())
+			];
+			for (const { sessionId } of rolls) {
+				const got = await matka.reveal(sessionId);
+				if (got.status !== 'rolled') continue;
+				if (got.firstReveal) result.revealed++;
+				if (got.refund === 'issued') result.refunded++;
+				if (got.refund === 'pending') result.pending.push(sessionId);
+			}
+			return result;
 		},
 
 		/**

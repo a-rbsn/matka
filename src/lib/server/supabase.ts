@@ -110,6 +110,16 @@ export function supabaseStore(
 			if (error) throw error;
 			return (data as Row[]).map(toRoll);
 		},
+		async listUnrefunded() {
+			const { data, error } = await rolls()
+				.select()
+				.eq('won', true)
+				.not('revealed_at', 'is', null)
+				.is('refund_id', null)
+				.order('created_at');
+			if (error) throw error;
+			return (data as Row[]).map(toRoll);
+		},
 		async markNone(sessionId, at) {
 			const { error } = await client
 				.from(noneTable)
